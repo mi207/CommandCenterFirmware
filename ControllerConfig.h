@@ -23,7 +23,7 @@ const bool JOYSTICK_AS_MOUSE=false;
 
 static const uint8_t FUNCTION_MAP[][2]={
                                          {0,'w'},
-                                         {2,'s'},
+                                         {0,'s'},
                                          {0,'a'},
                                          {0,'d'},
                                          {0,'k'},

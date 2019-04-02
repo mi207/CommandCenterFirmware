@@ -28,6 +28,9 @@
 
 #include "ControllerConfig.h"
 #include "src/KeyboardMouse/KeyboardMouse.h"
+#include <Servo.h>
+#include <Wire.h>
+#include "src/Firmata/Firmata.h"
 
 // set pin numbers for switch, joystick axes, and LED:
 // Look at https://law.resource.org/pub/us/cfr/ibr/005/sae.j1733.1994.html for axis convention
@@ -75,40 +78,51 @@ const int btnRightPin = A3;
 */
 /******ProMicro Setup*********/
 
+
+byte previousPIN[TOTAL_PORTS];  // PIN means PORT for input
+byte previousPORT[TOTAL_PORTS];
+
+void outputPort(byte portNumber, byte portValue)
+{
+  // only send the data when it changes, otherwise you get too many messages!
+  if (previousPIN[portNumber] != portValue) {
+    Firmata.sendDigitalPort(portNumber, portValue);
+    previousPIN[portNumber] = portValue;
+  }
+}
+
+void setPinModeCallback(byte pin, int mode) {
+  if (IS_PIN_DIGITAL(pin)) {
+    pinMode(PIN_TO_DIGITAL(pin), mode);
+  }
+}
+
+void digitalWriteCallback(byte port, int value)
+{
+  byte i;
+  byte currentPinValue, previousPinValue;
+
+  if (port < TOTAL_PORTS && value != previousPORT[port]) {
+    for (i = 0; i < 8; i++) {
+      currentPinValue = (byte) value & (1 << i);
+      previousPinValue = previousPORT[port] & (1 << i);
+      if (currentPinValue != previousPinValue) {
+        digitalWrite(i + (port * 8), currentPinValue);
+      }
+    }
+    previousPORT[port] = value;
+  }
+}
+
+
+
 //This is for making the array of class member function pointers 
 typedef  void (KeyboardMouseClass::*KeyboardMouseClassMemFn)(uint8_t x, bool y); 
 #define CALL_MEMBER_FN(object,ptrToMember)  ((object).*(ptrToMember))
 
 KeyboardMouseClassMemFn pressEvents[]= {&KeyboardMouse.keyboardPress,
                                         &KeyboardMouse.mousePress,
-                                        &KeyboardMouse.mouseWheelDownWithDelay};                                               
-
-void setup() {
-
-  pinMode(yawAxis, INPUT);
-  pinMode(pitchAxis, INPUT);
-  pinMode(btnLeftPin, INPUT_PULLUP);
-  pinMode(btnRightPin, INPUT_PULLUP);
-  pinMode(btnUpPin, INPUT_PULLUP);
-  pinMode(btnDownPin, INPUT_PULLUP);
-  pinMode(joystickPressPin, INPUT_PULLUP);
-  pinMode(CE, OUTPUT);                          //initialized the pin's mode.
-  /*
-  pinMode(JOYSTICK_VCC, OUTPUT);                //For ProMicro, set pin mode for postive rail
-  digitalWrite(JOYSTICK_VCC, HIGH);               //Set it high for VCC
-  */
-  KeyboardMouse.mouseMoveDelay=MOUSE_MOVE_DELAY;
-  KeyboardMouse.mouseWheelDelay=MOUSE_WHEEL_DELAY;
-
-  //TAKE OVER MOUSE
-  Mouse.begin();
-  //Serial.begin(9600);
-}
-
-void loop()
-{
-     checkJoystick();
-}
+                                        &KeyboardMouse.mouseWheelDownWithDelay};
 
 void checkJoystick()
 {
@@ -162,4 +176,53 @@ int readAxis(int thisAxis)
   return distance;
 }
 
+
+
+
+
+void setup() {
+  
+  pinMode(yawAxis, INPUT);
+  pinMode(pitchAxis, INPUT);
+  pinMode(btnLeftPin, INPUT_PULLUP);
+  pinMode(btnRightPin, INPUT_PULLUP);
+  pinMode(btnUpPin, INPUT_PULLUP);
+  pinMode(btnDownPin, INPUT_PULLUP);
+  pinMode(joystickPressPin, INPUT_PULLUP);
+  pinMode(CE, OUTPUT);                          //initialized the pin's mode.
+  /*
+  pinMode(JOYSTICK_VCC, OUTPUT);                //For ProMicro, set pin mode for postive rail
+  digitalWrite(JOYSTICK_VCC, HIGH);               //Set it high for VCC
+  */
+  KeyboardMouse.mouseMoveDelay=MOUSE_MOVE_DELAY;
+  KeyboardMouse.mouseWheelDelay=MOUSE_WHEEL_DELAY;
+
+  //TAKE OVER MOUSE
+  if (JOYSTICK_AS_MOUSE)
+    Mouse.begin();
+  //Serial.begin(9600);
+  Firmata.setFirmwareVersion(FIRMATA_FIRMWARE_MAJOR_VERSION, FIRMATA_FIRMWARE_MINOR_VERSION);
+  Firmata.attach(DIGITAL_MESSAGE, digitalWriteCallback);
+  Firmata.attach(SET_PIN_MODE, setPinModeCallback);
+  //Important for not taking over pin 13 in Arduino Micro!
+  //Probably won't be problem on Pro Micro as the mapping would be different and there is no internal LED
+  Firmata.disableBlinkVersion();
+  Firmata.begin(57600);
+  
+}
+
+
+void loop()
+{
+  checkJoystick();
+  byte i;
+
+  for (i = 0; i < TOTAL_PORTS; i++) {
+    outputPort(i, readPort(i, 0xff));
+  }
+
+  while (Firmata.available()) {
+    Firmata.processInput();
+  }
+}
 

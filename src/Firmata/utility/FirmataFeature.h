@@ -24,7 +24,7 @@
 #ifndef FirmataFeature_h
 #define FirmataFeature_h
 
-#include <Firmata.h>
+#include "../Firmata.h"
 
 class FirmataFeature
 {
